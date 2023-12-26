@@ -338,6 +338,169 @@ mod c_interop {
     }
 }
 
+#[cfg(not(feature = "py_bindings"))]
+#[cfg(all(not(target_arch = "wasm32"), not(tarpaulin)))]
+mod neon {
+  extern crate neon_serde3 as neon_serde;
+  
+  use crate::get_solution_serialized;
+
+  use crate::extensions::import::import_problem;
+  use crate::extensions::solve::config::{Config};
+  use std::io::{BufReader, BufWriter};
+  use std::sync::Arc;
+  use vrp_pragmatic::format::problem::{serialize_problem, PragmaticProblem, Problem};
+  use vrp_pragmatic::validation::ValidationContext;
+  use vrp_pragmatic::get_unique_locations;
+
+  use vrp_pragmatic::format::problem::Matrix;
+  use vrp_pragmatic::format::CoordIndex;
+
+  use neon::prelude::*;
+  
+  // Returns a list of unique locations which can be used to request a routing matrix.
+  // A `problem` should be passed in `pragmatic` format.
+  fn get_routing_locations(mut cx: FunctionContext) -> JsResult<JsValue> {
+    let arg0 = cx.argument::<JsValue>(0)?;
+    
+    let problem: Problem = match neon_serde::from_value(&mut cx, arg0) {
+      Ok(value) => value,
+      Err(e) => {
+          return cx.throw_error(e.to_string());
+      }
+    };
+    
+    let locations = get_unique_locations(&problem);
+    let locs_serialized = neon_serde::to_value(&mut cx, &locations).unwrap();
+
+    Ok(locs_serialized)
+  }
+
+  // Validates Vehicle Routing Problem passed in `pragmatic` format.
+  fn validate_pragmatic(mut cx: FunctionContext) -> JsResult<JsString> {
+    let arg0: Handle<JsValue> = cx.argument::<JsValue>(0)?;
+    let arg1: Handle<JsValue> = cx.argument::<JsValue>(1)?;
+    let problem: Problem = match neon_serde::from_value(&mut cx, arg0) {
+      Ok(value) => value,
+      Err(e) => {
+          return cx.throw_error(e.to_string());
+      }
+    };
+    let matrices: Vec<Matrix> = match neon_serde::from_value(&mut cx, arg1) {
+      Ok(value) => value,
+      Err(e) => {
+          return cx.throw_error(e.to_string());
+      }
+    };
+    let coord_index = CoordIndex::new(&problem);
+    
+    let matrices = if matrices.is_empty() { None } else { Some(&matrices) };
+    let _ = ValidationContext::new(&problem, matrices, &coord_index)
+      .validate()
+      .map_err(|errs| cx.throw_error::<&str, FunctionContext>(errs.to_string().as_str()))
+      .map(|_| cx.string("[]"));
+    
+    Ok(cx.string("[]"))
+  }
+
+  // Converts `problem` from format specified by `format` to `pragmatic` format.
+  fn convert_to_pragmatic(mut cx: FunctionContext) -> JsResult<JsString> {
+    let arg0: Handle<JsValue> = cx.argument::<JsValue>(0)?;
+    let arg1: Handle<JsValue> = cx.argument::<JsValue>(1)?;
+    let format: String = match neon_serde::from_value(&mut cx, arg0) {
+      Ok(value) => value,
+      Err(e) => {
+          return cx.throw_error(e.to_string());
+      }
+    };
+    let inputs: Vec<String> = match neon_serde::from_value(&mut cx, arg1) {
+      Ok(value) => value,
+      Err(e) => {
+          return cx.throw_error(e.to_string());
+      }
+    };
+    
+    let readers = inputs.iter().map(|input| BufReader::new(input.as_bytes())).collect();
+    
+    match import_problem(&format, Some(readers)) {
+      Ok(problem) => {
+        let mut writer = BufWriter::new(Vec::new());
+        serialize_problem(&problem, &mut writer).unwrap();
+        
+        let bytes = writer.into_inner().unwrap();
+        let result = String::from_utf8(bytes).unwrap();
+        
+        Ok(cx.string(result.as_str()))
+      }
+      Err(err) => cx.throw_error(err.to_string().as_str()),
+    }
+  }
+
+  // Solves Vehicle Routing Problem passed in `pragmatic` format.
+  fn solve_pragmatic(mut cx: FunctionContext) -> JsResult<JsValue> {
+    let arg0: Handle<JsValue> = cx.argument::<JsValue>(0)?;
+    let arg1: Handle<JsValue> = cx.argument::<JsValue>(1)?;
+    let arg2: Handle<JsValue> = cx.argument::<JsValue>(2)?;
+    let problem: Problem = match neon_serde::from_value(&mut cx, arg0) {
+      Ok(value) => value,
+      Err(e) => {
+          return cx.throw_error(e.to_string());
+      }
+    };
+    
+    let matrices: Vec<Matrix> = match neon_serde::from_value(&mut cx, arg1) {
+      Ok(value) => value,
+      Err(e) => {
+          return cx.throw_error(e.to_string());
+      }
+    };
+    
+    let problem = Arc::new(
+      if matrices.is_empty() {
+          match problem.read_pragmatic() {
+              Ok(inner_problem) => inner_problem,
+              Err(err) => {
+                  return cx.throw_error::<&str, _>(&format!("Error: {}", err));
+              }
+          }
+      } else {
+          match (problem, matrices).read_pragmatic() {
+              Ok(inner_problem) => inner_problem,
+              Err(err) => {
+                  return cx.throw_error::<&str, _>(&format!("Error: {}", err));
+              }
+          }
+      }
+  );
+    
+
+    let config: Config = match neon_serde::from_value::<FunctionContext, Config>(&mut cx, arg2) {
+        Ok(value) => value,
+        Err(e) => {
+            return cx.throw_error(e.to_string());
+        }
+      };
+      
+    let solution = get_solution_serialized(problem, config)
+      .map(|problem| neon_serde::to_value(&mut cx, &problem)).unwrap()
+      .map_err(|err| cx.throw_error::<&std::string::String, FunctionContext>(&err.to_string()));
+    
+      Ok(solution.map_err(|err| match err {
+        Ok(_) => panic!("Unexpected Ok value"),
+        Err(e) => e,
+      })?) 
+  }
+
+  #[neon::main]
+  fn main(mut cx: ModuleContext) -> NeonResult<()> {
+      cx.export_function("get_routing_locations", get_routing_locations)?;
+      cx.export_function("validate_pragmatic", validate_pragmatic)?;
+      cx.export_function("convert_to_pragmatic", convert_to_pragmatic)?;
+      cx.export_function("solve_pragmatic", solve_pragmatic)?;
+      Ok(())
+  }
+}
+
 #[cfg(feature = "py_bindings")]
 #[cfg(all(not(target_arch = "wasm32"), not(tarpaulin)))]
 mod py_interop {
@@ -509,6 +672,7 @@ pub fn get_locations_serialized(problem: &Problem) -> Result<String, GenericErro
     let locations = get_unique_locations(problem);
     serde_json::to_string_pretty(&locations).map_err(|err| err.to_string().into())
 }
+
 
 /// Gets solution serialized in json.
 pub fn get_solution_serialized(problem: Arc<CoreProblem>, config: Config) -> Result<String, GenericError> {
