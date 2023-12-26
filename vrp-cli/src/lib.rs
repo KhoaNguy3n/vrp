@@ -474,21 +474,21 @@ mod neon {
   );
     
 
-    let config: Config = match neon_serde::from_value::<FunctionContext, Config>(&mut cx, arg2) {
-        Ok(value) => value,
-        Err(e) => {
-            return cx.throw_error(e.to_string());
-        }
-      };
-      
-    let solution = get_solution_serialized(problem, config)
-      .map(|problem| neon_serde::to_value(&mut cx, &problem)).unwrap()
-      .map_err(|err| cx.throw_error::<&std::string::String, FunctionContext>(&err.to_string()));
+  let config: Config = match neon_serde::from_value::<FunctionContext, Config>(&mut cx, arg2) {
+      Ok(value) => value,
+      Err(e) => {
+          return cx.throw_error(e.to_string());
+      }
+    };
     
-      Ok(solution.map_err(|err| match err {
-        Ok(_) => panic!("Unexpected Ok value"),
-        Err(e) => e,
-      })?) 
+  let solution = get_solution_serialized(problem, config)
+    .map(|problem| neon_serde::to_value(&mut cx, &problem)).unwrap()
+    .map_err(|err| cx.throw_error::<&std::string::String, FunctionContext>(&err.to_string()));
+  
+    Ok(solution.map_err(|err| match err {
+      Ok(_) => panic!("Unexpected Ok value"),
+      Err(e) => e,
+    })?) 
   }
 
   #[neon::main]
