@@ -357,10 +357,11 @@ mod neon {
   use vrp_pragmatic::format::CoordIndex;
 
   use neon::prelude::*;
+  use serde_json::to_string;
   
   // Returns a list of unique locations which can be used to request a routing matrix.
   // A `problem` should be passed in `pragmatic` format.
-  fn get_routing_locations(mut cx: FunctionContext) -> JsResult<JsValue> {
+  fn get_routing_locations(mut cx: FunctionContext) -> JsResult<JsString> {
     let arg0 = cx.argument::<JsValue>(0)?;
     
     let problem: Problem = match neon_serde::from_value(&mut cx, arg0) {
@@ -371,9 +372,10 @@ mod neon {
     };
     
     let locations = get_unique_locations(&problem);
-    let locs_serialized = neon_serde::to_value(&mut cx, &locations).unwrap();
+    let locs_stringified = to_string(&locations).unwrap();
+    let locs_js_string = cx.string(locs_stringified);
 
-    Ok(locs_serialized)
+    Ok(locs_js_string)
   }
 
   // Validates Vehicle Routing Problem passed in `pragmatic` format.
@@ -437,7 +439,7 @@ mod neon {
   }
 
   // Solves Vehicle Routing Problem passed in `pragmatic` format.
-  fn solve_pragmatic(mut cx: FunctionContext) -> JsResult<JsValue> {
+  fn solve_pragmatic(mut cx: FunctionContext) -> JsResult<JsString> {
     let arg0: Handle<JsValue> = cx.argument::<JsValue>(0)?;
     let arg1: Handle<JsValue> = cx.argument::<JsValue>(1)?;
     let arg2: Handle<JsValue> = cx.argument::<JsValue>(2)?;
@@ -481,14 +483,13 @@ mod neon {
       }
     };
     
-  let solution = get_solution_serialized(problem, config)
-    .map(|problem| neon_serde::to_value(&mut cx, &problem)).unwrap()
-    .map_err(|err| cx.throw_error::<&std::string::String, FunctionContext>(&err.to_string()));
+  let solution = get_solution_serialized(problem.clone(), config.clone()) // clone the problem and config to avoid moving them
+    .map(|problem| cx.string(problem)).unwrap();
   
-    Ok(solution.map_err(|err| match err {
-      Ok(_) => panic!("Unexpected Ok value"),
-      Err(e) => e,
-    })?) 
+    drop(problem); // drop the problem explicitly
+    drop(config); // drop the config explicitly
+  
+    Ok(solution) 
   }
 
   #[neon::main]
