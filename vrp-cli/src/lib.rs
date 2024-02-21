@@ -374,7 +374,7 @@ mod neon {
     let locations = get_unique_locations(&problem);
     let locs_stringified = to_string(&locations).unwrap();
     let locs_js_string = cx.string(locs_stringified);
-
+    
     Ok(locs_js_string)
   }
 
@@ -402,6 +402,8 @@ mod neon {
       .map_err(|errs| cx.throw_error::<&str, FunctionContext>(errs.to_string().as_str()))
       .map(|_| cx.string("[]"));
     
+    drop(problem);
+
     Ok(cx.string("[]"))
   }
 
@@ -431,6 +433,8 @@ mod neon {
         
         let bytes = writer.into_inner().unwrap();
         let result = String::from_utf8(bytes).unwrap();
+        
+        drop(inputs);
         
         Ok(cx.string(result.as_str()))
       }
