@@ -358,37 +358,41 @@ mod neon {
 
   use neon::prelude::*;
   use serde_json::to_string;
+  use std::mem::ManuallyDrop;
   
   // Returns a list of unique locations which can be used to request a routing matrix.
   // A `problem` should be passed in `pragmatic` format.
   fn get_routing_locations(mut cx: FunctionContext) -> JsResult<JsString> {
-    let arg0 = cx.argument::<JsValue>(0)?;
+    let arg0 = ManuallyDrop::new(cx.argument::<JsValue>(0)?);
     
-    let problem: Problem = match neon_serde::from_value(&mut cx, arg0) {
+    let problem: Problem = match neon_serde::from_value(&mut cx, ManuallyDrop::into_inner(arg0)) {
       Ok(value) => value,
       Err(e) => {
           return cx.throw_error(e.to_string());
       }
     };
-    
+
     let locations = get_unique_locations(&problem);
     let locs_stringified = to_string(&locations).unwrap();
     let locs_js_string = cx.string(locs_stringified);
+    
+    drop(problem);
+    drop(arg0);
     
     Ok(locs_js_string)
   }
 
   // Validates Vehicle Routing Problem passed in `pragmatic` format.
   fn validate_pragmatic(mut cx: FunctionContext) -> JsResult<JsString> {
-    let arg0: Handle<JsValue> = cx.argument::<JsValue>(0)?;
-    let arg1: Handle<JsValue> = cx.argument::<JsValue>(1)?;
-    let problem: Problem = match neon_serde::from_value(&mut cx, arg0) {
+    let arg0 = ManuallyDrop::new(cx.argument::<JsValue>(0)?);
+    let arg1 = ManuallyDrop::new(cx.argument::<JsValue>(1)?);
+    let problem: Problem = match neon_serde::from_value(&mut cx, ManuallyDrop::into_inner(arg0)) {
       Ok(value) => value,
       Err(e) => {
           return cx.throw_error(e.to_string());
       }
     };
-    let matrices: Vec<Matrix> = match neon_serde::from_value(&mut cx, arg1) {
+    let matrices: Vec<Matrix> = match neon_serde::from_value(&mut cx, ManuallyDrop::into_inner(arg1)) {
       Ok(value) => value,
       Err(e) => {
           return cx.throw_error(e.to_string());
@@ -403,21 +407,23 @@ mod neon {
       .map(|_| cx.string("[]"));
     
     drop(problem);
+    drop(arg0);
+    drop(arg1);
 
     Ok(cx.string("[]"))
   }
 
   // Converts `problem` from format specified by `format` to `pragmatic` format.
   fn convert_to_pragmatic(mut cx: FunctionContext) -> JsResult<JsString> {
-    let arg0: Handle<JsValue> = cx.argument::<JsValue>(0)?;
-    let arg1: Handle<JsValue> = cx.argument::<JsValue>(1)?;
-    let format: String = match neon_serde::from_value(&mut cx, arg0) {
+    let arg0 = ManuallyDrop::new(cx.argument::<JsValue>(0)?);
+    let arg1 = ManuallyDrop::new(cx.argument::<JsValue>(1)?);
+    let format: String = match neon_serde::from_value(&mut cx, ManuallyDrop::into_inner(arg0)) {
       Ok(value) => value,
       Err(e) => {
           return cx.throw_error(e.to_string());
       }
     };
-    let inputs: Vec<String> = match neon_serde::from_value(&mut cx, arg1) {
+    let inputs: Vec<String> = match neon_serde::from_value(&mut cx, ManuallyDrop::into_inner(arg1)) {
       Ok(value) => value,
       Err(e) => {
           return cx.throw_error(e.to_string());
@@ -435,6 +441,8 @@ mod neon {
         let result = String::from_utf8(bytes).unwrap();
         
         drop(inputs);
+        drop(arg0);
+        drop(arg1);
         
         Ok(cx.string(result.as_str()))
       }
@@ -444,56 +452,54 @@ mod neon {
 
   // Solves Vehicle Routing Problem passed in `pragmatic` format.
   fn solve_pragmatic(mut cx: FunctionContext) -> JsResult<JsString> {
-    let arg0: Handle<JsValue> = cx.argument::<JsValue>(0)?;
-    let arg1: Handle<JsValue> = cx.argument::<JsValue>(1)?;
-    let arg2: Handle<JsValue> = cx.argument::<JsValue>(2)?;
-    let problem: Problem = match neon_serde::from_value(&mut cx, arg0) {
-      Ok(value) => value,
-      Err(e) => {
-          return cx.throw_error(e.to_string());
-      }
+    let arg0 = ManuallyDrop::new(cx.argument::<JsValue>(0)?);
+    let arg1 = ManuallyDrop::new(cx.argument::<JsValue>(1)?);
+    let arg2 = ManuallyDrop::new(cx.argument::<JsValue>(2)?);
+    let problem: Problem = match neon_serde::from_value(&mut cx, ManuallyDrop::into_inner(arg0)) {
+        Ok(value) => value,
+        Err(e) => return cx.throw_error(e.to_string()),
     };
-    
-    let matrices: Vec<Matrix> = match neon_serde::from_value(&mut cx, arg1) {
-      Ok(value) => value,
-      Err(e) => {
-          return cx.throw_error(e.to_string());
-      }
-    };
-    
-    let problem = Arc::new(
-      if matrices.is_empty() {
-          match problem.read_pragmatic() {
-              Ok(inner_problem) => inner_problem,
-              Err(err) => {
-                  return cx.throw_error::<&str, _>(&format!("Error: {}", err));
-              }
-          }
-      } else {
-          match (problem, matrices).read_pragmatic() {
-              Ok(inner_problem) => inner_problem,
-              Err(err) => {
-                  return cx.throw_error::<&str, _>(&format!("Error: {}", err));
-              }
-          }
-      }
-  );
-    
 
-  let config: Config = match neon_serde::from_value::<FunctionContext, Config>(&mut cx, arg2) {
-      Ok(value) => value,
-      Err(e) => {
-          return cx.throw_error(e.to_string());
-      }
+    let matrices: Vec<Matrix> = match neon_serde::from_value(&mut cx, ManuallyDrop::into_inner(arg1)) {
+        Ok(value) => value,
+        Err(e) => return cx.throw_error(e.to_string()),
     };
+
+    let problem = Arc::new(
+        if matrices.is_empty() {
+            match problem.read_pragmatic() {
+                Ok(inner_problem) => inner_problem,
+                Err(err) => {
+                    return cx.throw_error::<&str, _>(&format!("Error: {}", err));
+                }
+            }
+        } else {
+            match (problem, matrices.clone()).read_pragmatic() {
+                Ok(inner_problem) => inner_problem,
+                Err(err) => {
+                    return cx.throw_error::<&str, _>(&format!("Error: {}", err));
+                }
+            }
+        }
+    );
+
+    let config: Config = match neon_serde::from_value::<FunctionContext, Config>(&mut cx, ManuallyDrop::into_inner(arg2)) {
+        Ok(value) => value,
+        Err(e) => return cx.throw_error(e.to_string()),
+    };
+
+    let solution = get_solution_serialized(problem.clone(), config.clone())
+        .map(|problem| cx.string(problem)).unwrap();
+
+    drop(problem); 
+    drop(config); 
+    drop(matrices);
     
-  let solution = get_solution_serialized(problem.clone(), config.clone()) // clone the problem and config to avoid moving them
-    .map(|problem| cx.string(problem)).unwrap();
-  
-    drop(problem); // drop the problem explicitly
-    drop(config); // drop the config explicitly
-  
-    Ok(solution) 
+    drop(arg0);
+    drop(arg1);
+    drop(arg2);
+
+    Ok(solution)
   }
 
   #[neon::main]
